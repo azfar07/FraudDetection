@@ -2,7 +2,7 @@
 
 namespace FraudDetection.Dto
 {
-    public class TransactionDto
+    public class TransactionRequiredDataDto
     {
         [Required]
         public required string TransactionId { get; set; }
@@ -11,7 +11,18 @@ namespace FraudDetection.Dto
         [Required]
         public decimal Amount { get; set; }
         public DateTime? Timestamp { get; set; }
+
+    }
+    public class TransactionDto: TransactionRequiredDataDto
+    {
         [Required]
         public required string DeviceId { get; set; }
+    }
+    public class TransactionDataDto: TransactionRequiredDataDto
+    {
+        public required string HighRisk { get; set; }
+
+        public required string Suspicious { get; set; }
+
     }
 }

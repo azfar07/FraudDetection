@@ -9,30 +9,32 @@ namespace FraudDetection.Service
         public async Task PerformTransaction(TransactionDto transactionInfo)
         {
             using var connection = await CreateOpenConnection();
-            long userTransactionCount = await GetUserTransactionCount(connection, transactionInfo.UserId);
+            DateTime checktransactioTime = DateTime.UtcNow;
+            long userTransactionCount = await GetUserTransactionCount(connection, transactionInfo.UserId, checktransactioTime);
             bool highRiskAmount = transactionInfo.Amount > 20000? true :false;
             bool suspeciousAmount = userTransactionCount > 3 ? true :false;
             DateTime finalTimestamp = transactionInfo.Timestamp ?? DateTime.UtcNow;
             await InsertTransaction(connection,transactionInfo,highRiskAmount,suspeciousAmount,finalTimestamp);
         }
 
-        public async Task<List<TransactionDto>> GetTransactions(string? userId)
+        public async Task<List<TransactionDataDto>> GetTransactions(string? userId)
         {
             using var connection = await CreateOpenConnection();
             using var data = await ExecuteTransactionQuery(connection, userId);
-            var result = new List <TransactionDto>();
+            var result = new List <TransactionDataDto>();
 
             while(await data.ReadAsync()){
-                result.Add(new TransactionDto
+                result.Add(new TransactionDataDto
                 {
                     TransactionId = data["transaction_id"].ToString(),
                     UserId = data["user_id"].ToString(),
                     Amount= Convert.ToDecimal(data["amount"]),
                     Timestamp = data["timestamp"]== DBNull.Value? null: Convert.ToDateTime(data["timestamp"]),
-                    DeviceId = data["device_id"].ToString()
+                    HighRisk = data["high_risk"].ToString(),
+                    Suspicious = data["suspicious"].ToString(),
                 });
             }
-            return result;
+                return result;
         }
         private async Task<SqliteDataReader> ExecuteTransactionQuery(SqliteConnection connection,string? userId)
         {
@@ -40,12 +42,12 @@ namespace FraudDetection.Service
 
             if (!string.IsNullOrWhiteSpace(userId))
             {
-                command.CommandText = @"SELECT transaction_id, user_id, amount, timestamp, device_id FROM transactions WHERE user_id = $userId ORDER BY timestamp DESC;";
+                command.CommandText = @"SELECT transaction_id, user_id, amount, timestamp, high_risk, suspicious FROM transactions WHERE user_id = $userId ORDER BY timestamp DESC;";
                 command.Parameters.AddWithValue("$userId", userId);
             }
             else
             {
-                command.CommandText = @"SELECT transaction_id, user_id, amount, timestamp, device_id FROM transactions ORDER BY timestamp DESC;";
+                command.CommandText = @"SELECT transaction_id, user_id, amount, timestamp,high_risk, suspicious FROM transactions ORDER BY timestamp DESC;";
             }
 
             return await command.ExecuteReaderAsync();
@@ -67,14 +69,15 @@ namespace FraudDetection.Service
 
             await insertCommand.ExecuteNonQueryAsync();
         }
-        private async Task<long> GetUserTransactionCount(SqliteConnection connection,string userId)
+        private async Task<long> GetUserTransactionCount(SqliteConnection connection,string userId , DateTime currentTimestamp)
         {
             using var countCommand = connection.CreateCommand();
 
             countCommand.CommandText =
-                "SELECT COUNT(*) FROM transactions WHERE user_id = $user;";
+                "SELECT COUNT(*) FROM transactions WHERE user_id = $user AND timestamp >=$oneMinte;";
 
             countCommand.Parameters.AddWithValue("$user", userId);
+            countCommand.Parameters.AddWithValue("$oneMinte", currentTimestamp.AddMinutes(-1));
 
             return (long)await countCommand.ExecuteScalarAsync();
         }
